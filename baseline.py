@@ -87,6 +87,18 @@ def main() -> None:
         pickle.dump(model, f)
     print(f"Saved model to {MODEL_PATH}")
 
+    print("\nComputing zone-pair averages...")
+
+    zone_avg = (
+        train.groupby(["pickup_zone", "dropoff_zone"])["duration_seconds"]
+        .mean()
+        .to_dict()
+    )
+
+    with open(Path(__file__).parent / "zone_avg.pkl", "wb") as f:
+        pickle.dump(zone_avg, f)
+
+    print(f"Saved zone-pair averages ({len(zone_avg)} entries)")
 
 if __name__ == "__main__":
     main()

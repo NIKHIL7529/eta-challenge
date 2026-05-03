@@ -16,6 +16,11 @@ _MODEL_PATH = Path(__file__).parent / "model.pkl"
 
 with open(_MODEL_PATH, "rb") as _f:
     _MODEL = pickle.load(_f)
+
+_ZONE_PATH = Path(__file__).parent / "zone_avg.pkl"
+
+with open(_ZONE_PATH, "rb") as f:
+    _ZONE_AVG = pickle.load(f)
 # Disable xgboost's feature-name validation so we can predict on a bare
 # numpy array (skips per-call DataFrame construction overhead).
 if hasattr(_MODEL, "get_booster"):
@@ -48,4 +53,11 @@ def predict(request: dict) -> float:
         ]],
         dtype=np.int32,
     )
+    key = (int(request["pickup_zone"]), int(request["dropoff_zone"]))
+
+    # Use zone average if available
+    if key in _ZONE_AVG:
+        return float(_ZONE_AVG[key])
+
+    # fallback to model
     return float(_MODEL.predict(x)[0])
