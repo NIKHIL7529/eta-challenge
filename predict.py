@@ -13,21 +13,19 @@ from pathlib import Path
 import numpy as np
 
 _MODEL_PATH = Path(__file__).parent / "model.pkl"
-_ZONE_TIME_PATH = Path(__file__).parent / "zone_time_avg.pkl"
-_ZONE_TIME_COUNT_PATH = Path(__file__).parent / "zone_time_count.pkl"
-_ZONE_PATH = Path(__file__).parent / "zone_avg.pkl"
 
 with open(_MODEL_PATH, "rb") as _f:
     _MODEL = pickle.load(_f)
 
-with open(_ZONE_TIME_PATH, "rb") as f:
-    _ZONE_TIME_AVG = pickle.load(f)
-
-with open(_ZONE_TIME_COUNT_PATH, "rb") as f:
-    _ZONE_TIME_COUNT = pickle.load(f)
+_ZONE_PATH = Path(__file__).parent / "zone_avg.pkl"
 
 with open(_ZONE_PATH, "rb") as f:
     _ZONE_AVG = pickle.load(f)
+
+_ZONE_TIME_PATH = Path(__file__).parent / "zone_time_avg.pkl"
+
+with open(_ZONE_TIME_PATH, "rb") as f:
+    _ZONE_TIME_AVG = pickle.load(f)
 # Disable xgboost's feature-name validation so we can predict on a bare
 # numpy array (skips per-call DataFrame construction overhead).
 if hasattr(_MODEL, "get_booster"):
@@ -69,14 +67,15 @@ def predict(request: dict) -> float:
 
     model_pred = float(_MODEL.predict(x)[0])
 
-    # --- 1. time-aware (ONLY if reliable) ---
+    # 1. Try time-aware zone avg
     if key_time in _ZONE_TIME_AVG:
-        if _ZONE_TIME_COUNT.get(key_time, 0) >= 20:
-            return float(_ZONE_TIME_AVG[key_time])
+        zone_pred = float(_ZONE_TIME_AVG[key_time])
+        return 0.9 * zone_pred + 0.1 * model_pred
 
-    # --- 2. zone fallback ---
+    # 2. fallback to old zone avg
     if key in _ZONE_AVG:
-        return float(_ZONE_AVG[key])
+        zone_pred = float(_ZONE_AVG[key])
+        return 0.7 * zone_pred + 0.3 * model_pred
 
-    # --- 3. final fallback ---
+    # 3. fallback to model
     return model_pred

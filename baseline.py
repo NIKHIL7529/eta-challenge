@@ -87,40 +87,20 @@ def main() -> None:
         pickle.dump(model, f)
     print(f"Saved model to {MODEL_PATH}")
 
-    print("\nComputing time-aware zone averages with counts...")
+    print("\nComputing time-aware zone averages...")
 
-    # extract hour
     train["hour"] = pd.to_datetime(train["requested_at"]).dt.hour
 
-    # --- time-aware ---
-    group_time = train.groupby(["pickup_zone", "dropoff_zone", "hour"])["duration_seconds"]
+    zone_time_avg = (
+        train.groupby(["pickup_zone", "dropoff_zone", "hour"])["duration_seconds"]
+        .mean()
+        .to_dict()
+    )
 
-    zone_time_avg = group_time.mean()
-    zone_time_count = group_time.count()
-
-    zone_time_avg = zone_time_avg.to_dict()
-    zone_time_count = zone_time_count.to_dict()
-
-    # --- zone only ---
-    group = train.groupby(["pickup_zone", "dropoff_zone"])["duration_seconds"]
-
-    zone_avg = group.mean().to_dict()
-
-    # --- save all ---
-    base_path = Path(__file__).parent
-
-    with open(base_path / "zone_time_avg.pkl", "wb") as f:
+    with open(Path(__file__).parent / "zone_avg.pkl", "wb") as f:
         pickle.dump(zone_time_avg, f)
 
-    with open(base_path / "zone_time_count.pkl", "wb") as f:
-        pickle.dump(zone_time_count, f)
-
-    with open(base_path / "zone_avg.pkl", "wb") as f:
-        pickle.dump(zone_avg, f)
-
-    print(f"Saved zone_time_avg ({len(zone_time_avg)})")
-    print(f"Saved zone_time_count ({len(zone_time_count)})")
-    print(f"Saved zone_avg ({len(zone_avg)})")
+    print(f"Saved zone-pair averages ({len(zone_time_avg)} entries)")
 
 if __name__ == "__main__":
     main()
