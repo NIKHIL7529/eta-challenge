@@ -17,6 +17,7 @@ about `predict.py` — this file just needs to produce a `model.pkl` that
 
 from __future__ import annotations
 
+import sys
 import pickle
 import time
 from pathlib import Path
@@ -27,6 +28,7 @@ import xgboost as xgb
 
 DATA_DIR = Path(__file__).parent / "data"
 MODEL_PATH = Path(__file__).parent / "model.pkl"
+SKIP_TRAIN = "--skip-train" in sys.argv
 
 FEATURES = ["pickup_zone", "dropoff_zone", "hour", "dow", "month", "passenger_count"]
 
@@ -64,28 +66,35 @@ def main() -> None:
     X_dev = engineer_features(dev)
     y_dev = dev["duration_seconds"].to_numpy()
 
-    print("\nTraining XGBoost...")
-    model = xgb.XGBRegressor(
-        n_estimators=400,
-        max_depth=8,
-        learning_rate=0.08,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        tree_method="hist",
-        n_jobs=-1,
-        random_state=42,
-    )
-    t0 = time.time()
-    model.fit(X_train, y_train, verbose=False)
-    print(f"  trained in {time.time() - t0:.0f}s")
+    if SKIP_TRAIN and MODEL_PATH.exists():
+        print("\nSkipping training — loading existing model...")
+        with open(MODEL_PATH, "rb") as f:
+            model = pickle.load(f)
+    else:
+        print("\nTraining XGBoost...")
+        model = xgb.XGBRegressor(
+            n_estimators=400,
+            max_depth=8,
+            learning_rate=0.08,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            tree_method="hist",
+            n_jobs=-1,
+            random_state=42,
+        )
+        t0 = time.time()
+        model.fit(X_train, y_train, verbose=False)
+        print(f"  trained in {time.time() - t0:.0f}s")
 
-    preds = model.predict(X_dev)
-    mae = float(np.mean(np.abs(preds - y_dev)))
-    print(f"\nDev MAE: {mae:.1f} seconds")
+        with open(MODEL_PATH, "wb") as f:
+            pickle.dump(model, f)
+        print(f"Saved model to {MODEL_PATH}")
+        
+    if not SKIP_TRAIN:
+        preds = model.predict(X_dev)
+        mae = float(np.mean(np.abs(preds - y_dev)))
+        print(f"\nDev MAE: {mae:.1f} seconds")
 
-    with open(MODEL_PATH, "wb") as f:
-        pickle.dump(model, f)
-    print(f"Saved model to {MODEL_PATH}")
 
     print("\nComputing time-aware zone averages...")
 
@@ -97,7 +106,7 @@ def main() -> None:
         .to_dict()
     )
 
-    with open(Path(__file__).parent / "zone_avg.pkl", "wb") as f:
+    with open(Path(__file__).parent / "zone_time_avg.pkl", "wb") as f:
         pickle.dump(zone_time_avg, f)
 
     print(f"Saved zone-pair averages ({len(zone_time_avg)} entries)")
