@@ -57,7 +57,9 @@ def predict(request: dict) -> float:
 
     # Use zone average if available
     if key in _ZONE_AVG:
-        return float(_ZONE_AVG[key])
+        zone_pred = float(_ZONE_AVG[key])
+        model_pred = float(_MODEL.predict(x)[0])
+        return 0.7 * zone_pred + 0.3 * model_pred
 
     # fallback to model
     return float(_MODEL.predict(x)[0])
