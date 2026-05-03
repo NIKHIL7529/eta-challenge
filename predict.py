@@ -21,6 +21,11 @@ _ZONE_PATH = Path(__file__).parent / "zone_avg.pkl"
 
 with open(_ZONE_PATH, "rb") as f:
     _ZONE_AVG = pickle.load(f)
+
+_ZONE_TIME_PATH = Path(__file__).parent / "zone_time_avg.pkl"
+
+with open(_ZONE_TIME_PATH, "rb") as f:
+    _ZONE_TIME_AVG = pickle.load(f)
 # Disable xgboost's feature-name validation so we can predict on a bare
 # numpy array (skips per-call DataFrame construction overhead).
 if hasattr(_MODEL, "get_booster"):
@@ -53,13 +58,24 @@ def predict(request: dict) -> float:
         ]],
         dtype=np.int32,
     )
-    key = (int(request["pickup_zone"]), int(request["dropoff_zone"]))
+    pickup = int(request["pickup_zone"])
+    drop = int(request["dropoff_zone"])
+    hour = ts.hour
 
-    # Use zone average if available
+    key_time = (pickup, drop, hour)
+    key = (pickup, drop)
+
+    model_pred = float(_MODEL.predict(x)[0])
+
+    # 1. Try time-aware zone avg
+    if key_time in _ZONE_TIME_AVG:
+        zone_pred = float(_ZONE_TIME_AVG[key_time])
+        return 0.9 * zone_pred + 0.1 * model_pred
+
+    # 2. fallback to old zone avg
     if key in _ZONE_AVG:
         zone_pred = float(_ZONE_AVG[key])
-        model_pred = float(_MODEL.predict(x)[0])
         return 0.7 * zone_pred + 0.3 * model_pred
 
-    # fallback to model
-    return float(_MODEL.predict(x)[0])
+    # 3. fallback to model
+    return model_pred
