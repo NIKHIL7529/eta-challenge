@@ -82,6 +82,9 @@ IDs. Would help generalization for low-frequency zone pairs.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+# If zone_coords.pkl is missing, regenerate it:
+python data/compute_zone_centroids.py
+
 # 1. Data (one-time, ~500 MB)
 python data/download_data.py
 
