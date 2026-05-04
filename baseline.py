@@ -30,12 +30,28 @@ DATA_DIR = Path(__file__).parent / "data"
 MODEL_PATH = Path(__file__).parent / "model.pkl"
 SKIP_TRAIN = "--skip-train" in sys.argv
 
-FEATURES = ["pickup_zone", "dropoff_zone", "hour", "dow", "month", "passenger_count"]
+FEATURES = ["pickup_zone", "dropoff_zone", "hour", "dow", "month", "passenger_count", "distance"]
 
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """Turn raw request columns into the 6 model features."""
     ts = pd.to_datetime(df["requested_at"])
+    # load coords once
+    coords = pickle.load(open(Path(__file__).parent / "zone_coords.pkl", "rb"))
+
+    def compute_distance(row):
+        lat1, lon1 = coords.get(row["pickup_zone"], (0.0, 0.0))
+        lat2, lon2 = coords.get(row["dropoff_zone"], (0.0, 0.0))
+
+        # inline haversine (avoid import issues)
+        import math
+        R = 6371
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+        return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
     return pd.DataFrame({
         "pickup_zone":     df["pickup_zone"].astype("int32"),
         "dropoff_zone":    df["dropoff_zone"].astype("int32"),
@@ -43,8 +59,8 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         "dow":             ts.dt.dayofweek.astype("int8"),
         "month":           ts.dt.month.astype("int8"),
         "passenger_count": df["passenger_count"].astype("int8"),
+        "distance":        df.apply(compute_distance, axis=1).astype("float32"),
     })[FEATURES]
-
 
 def main() -> None:
     train_path = DATA_DIR / "train.parquet"
@@ -89,7 +105,7 @@ def main() -> None:
         with open(MODEL_PATH, "wb") as f:
             pickle.dump(model, f)
         print(f"Saved model to {MODEL_PATH}")
-        
+
     if not SKIP_TRAIN:
         preds = model.predict(X_dev)
         mae = float(np.mean(np.abs(preds - y_dev)))

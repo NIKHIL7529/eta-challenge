@@ -27,5 +27,6 @@ COPY predict.py grade.py ./
 COPY model.pkl ./
 COPY zone_avg.pkl ./
 COPY zone_time_avg.pkl ./
+COPY zone_coords.pkl ./
 # Grader invokes:  python grade.py <input.parquet> <output.csv>
 ENTRYPOINT ["python", "grade.py"]

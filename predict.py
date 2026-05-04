@@ -9,6 +9,7 @@ from __future__ import annotations
 import pickle
 from datetime import datetime
 from pathlib import Path
+import math
 
 import numpy as np
 
@@ -26,6 +27,11 @@ _ZONE_TIME_PATH = Path(__file__).parent / "zone_time_avg.pkl"
 
 with open(_ZONE_TIME_PATH, "rb") as f:
     _ZONE_TIME_AVG = pickle.load(f)
+
+_ZONE_COORDS_PATH = Path(__file__).parent / "zone_coords.pkl"
+
+with open(_ZONE_COORDS_PATH, "rb") as f:
+    _ZONE_COORDS = pickle.load(f)
 # Disable xgboost's feature-name validation so we can predict on a bare
 # numpy array (skips per-call DataFrame construction overhead).
 if hasattr(_MODEL, "get_booster"):
@@ -33,6 +39,16 @@ if hasattr(_MODEL, "get_booster"):
 
 # Feature order must match baseline.py:
 #   pickup_zone, dropoff_zone, hour, dow, month, passenger_count
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371  # km
+
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def predict(request: dict) -> float:
@@ -47,20 +63,26 @@ def predict(request: dict) -> float:
         }
     """
     ts = datetime.fromisoformat(request["requested_at"])
-    x = np.array(
-        [[
-            int(request["pickup_zone"]),
-            int(request["dropoff_zone"]),
-            ts.hour,
-            ts.weekday(),
-            ts.month,
-            int(request["passenger_count"]),
-        ]],
-        dtype=np.int32,
-    )
     pickup = int(request["pickup_zone"])
     drop = int(request["dropoff_zone"])
     hour = ts.hour
+
+    lat1, lon1 = _ZONE_COORDS.get(pickup, (0.0, 0.0))
+    lat2, lon2 = _ZONE_COORDS.get(drop, (0.0, 0.0))
+    distance = haversine(lat1, lon1, lat2, lon2)
+
+    x = np.array(
+        [[
+            pickup,
+            drop,
+            hour,
+            ts.weekday(),
+            ts.month,
+            int(request["passenger_count"]),
+            distance, 
+        ]],
+        dtype=np.float32,
+    )
 
     key_time = (pickup, drop, hour)
     key = (pickup, drop)
