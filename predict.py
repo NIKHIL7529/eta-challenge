@@ -18,15 +18,13 @@ _MODEL_PATH = Path(__file__).parent / "model.pkl"
 with open(_MODEL_PATH, "rb") as _f:
     _MODEL = pickle.load(_f)
 
-_ZONE_PATH = Path(__file__).parent / "zone_avg.pkl"
+_ZONE_MAPS_PATH = Path(__file__).parent / "zone_maps.pkl"
+with open(_ZONE_MAPS_PATH, "rb") as f:
+    _ZONE_MAPS = pickle.load(f)
 
-with open(_ZONE_PATH, "rb") as f:
-    _ZONE_AVG = pickle.load(f)
-
-_ZONE_TIME_PATH = Path(__file__).parent / "zone_time_avg.pkl"
-
-with open(_ZONE_TIME_PATH, "rb") as f:
-    _ZONE_TIME_AVG = pickle.load(f)
+_ZONE_PAIR_MAP = _ZONE_MAPS["zone_pair"]
+_ZONE_TIME_MAP = _ZONE_MAPS["zone_time"]
+_GLOBAL_MEAN   = _ZONE_MAPS["global_mean"]
 
 _ZONE_COORDS_PATH = Path(__file__).parent / "zone_coords.pkl"
 
@@ -38,7 +36,8 @@ if hasattr(_MODEL, "get_booster"):
     _MODEL.get_booster().feature_names = None
 
 # Feature order must match baseline.py:
-#   pickup_zone, dropoff_zone, hour, dow, month, passenger_count
+#   pickup_zone, dropoff_zone, hour, dow, month, passenger_count, distance,
+#   zone_pair_mean, zone_time_mean
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371  # km
@@ -71,33 +70,26 @@ def predict(request: dict) -> float:
     lat2, lon2 = _ZONE_COORDS.get(drop, (0.0, 0.0))
     distance = haversine(lat1, lon1, lat2, lon2)
 
-    x = np.array(
-        [[
-            pickup,
-            drop,
-            hour,
-            ts.weekday(),
-            ts.month,
-            int(request["passenger_count"]),
-            distance, 
-        ]],
-        dtype=np.float32,
-    )
+    zone_pair_mean = _ZONE_PAIR_MAP.get((pickup, drop), _GLOBAL_MEAN)
+    zone_time_mean = _ZONE_TIME_MAP.get((pickup, drop, hour), zone_pair_mean)
 
-    key_time = (pickup, drop, hour)
-    key = (pickup, drop)
+    x = np.array([[
+        pickup,
+        drop,
+        hour,
+        ts.weekday(),
+        ts.month,
+        int(request["passenger_count"]),
+        distance,
+        zone_pair_mean,
+        zone_time_mean,
+    ]], dtype=np.float32)
 
     model_pred = float(_MODEL.predict(x)[0])
 
-    # 1. Try time-aware zone avg
-    if key_time in _ZONE_TIME_AVG:
-        zone_pred = float(_ZONE_TIME_AVG[key_time])
-        return 0.9 * zone_pred + 0.1 * model_pred
-
-    # 2. fallback to old zone avg
-    if key in _ZONE_AVG:
-        zone_pred = float(_ZONE_AVG[key])
-        return 0.7 * zone_pred + 0.3 * model_pred
-
-    # 3. fallback to model
+    # Blending: zone signal dominates, model adds generalization
+    if (pickup, drop, hour) in _ZONE_TIME_MAP:
+        return 0.7 * zone_time_mean + 0.3 * model_pred
+    if (pickup, drop) in _ZONE_PAIR_MAP:
+        return 0.7 * zone_pair_mean + 0.3 * model_pred
     return model_pred
